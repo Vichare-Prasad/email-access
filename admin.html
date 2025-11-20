@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email Scanner Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f6f8;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: #007bff;
+      color: white;
+      padding: 16px;
+      text-align: center;
+    }
+    main {
+      padding: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #f8f9fa;
+    }
+    tr:hover {
+      background-color: #f1f1f1;
+    }
+    .bank {
+      color: green;
+      font-weight: bold;
+    }
+    .nonbank {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h2>📊 Email PDF Bank Statement Scanner</h2>
+  </header>
+  <main>
+    <p>Below are the latest processed PDF results:</p>
+    <table id="resultsTable">
+      <thead>
+        <tr>
+          <th>File Name</th>
+          <th>Confidence</th>
+          <th>Status</th>
+          <th>Processed Time</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody">
+        <tr><td colspan="4">Loading...</td></tr>
+      </tbody>
+    </table>
+  </main>
+
+  <script>
+    async function loadResults() {
+      try {
+        const response = await fetch('/attachments/processed_results.json');
+        const data = await response.json();
+        const tbody = document.getElementById('resultsBody');
+        tbody.innerHTML = "";
+
+        if (!data.length) {
+          tbody.innerHTML = "<tr><td colspan='4'>No results found yet</td></tr>";
+          return;
+        }
+
+        data.reverse().forEach(item => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${item.fileName}</td>
+            <td>${item.confidence}</td>
+            <td class="${item.isBankStatement ? 'bank' : 'nonbank'}">
+              ${item.isBankStatement ? 'Bank Statement' : 'Not a Statement'}
+            </td>
+            <td>${new Date(item.detectedAt).toLocaleString()}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        document.getElementById('resultsBody').innerHTML =
+          "<tr><td colspan='4'>Error loading results</td></tr>";
+      }
+    }
+    loadResults();
+    setInterval(loadResults, 30000); // auto-refresh every 30s
+  </script>
+</body>
+</html>

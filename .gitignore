@@ -1,0 +1,116 @@
+# Dependencies
+node_modules/
+.npm
+package-lock.json
+yarn.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv
+ENV/
+env/
+venv/
+ENV.bak/
+env.bak/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# OS
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Build output
+dist/
+build/
+*.o
+*.a
+*.lib
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+.cache/
+
+# Application specific
+output/
+input/
+storage/
+daemon/
+-Force/
+*.lnk
+service.port
+
+# Executable files (too large for GitHub)
+*.exe
+*.dll
+*.o
+*.a
+
+# Keep these directories but ignore their contents
+# (git can't track empty directories)
+output/processed_db.json
+output/users.json
+output/1/
+output/2/
+output/rejected/
+output/unprocessed/
+output/unprocessed_real/
+output_json/
+unprocessed1/
+unprocessed2/
+
+# Exclude specific files that shouldn't be committed
+processed_db.json
+report.json
