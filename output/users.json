@@ -1,0 +1,11 @@
+{
+  "prasadvichare02@gmail.com": {
+    "email": "prasadvichare02@gmail.com",
+    "saved_at": "2025-11-14T10:22:48.924Z",
+    "refresh_token": "1//0gqe5fYLSjSa7CgYIARAAGBASNwF-L9IrCCPAZCX53JAsoBlMG-okX83s5FCC4X0TYGz4y0RF-vLvWEl91V9lToOIgY6Ca18Zw_U",
+    "access_token": "ya29.a0ATi6K2u_IIoRRVv1nPIyjfh5Q5QEobyqQKWFrzCWLg4MEPwC7HPePvchj0eREGvuBGo_IDEaruZo8JIYKLkLx38bP7TNEzOawzvqg4fsjoruoQw9-Ycm8TzExplitZihgmltfKr49_-zilGQb1gpQm2t7xqxXD9VcD47lzghNyRB6rMXDSn6IsEkCkBd_hCvc_0CGacaCgYKAYUSARESFQHGX2Mi6sL3zl7vlqmiM1q4JwsTAg0206",
+    "expiry_date": 1763119367720,
+    "token_type": "Bearer",
+    "scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify"
+  }
+}

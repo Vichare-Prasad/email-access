@@ -1,5 +1,5 @@
 # Dependencies
-node_modules/
+
 .npm
 package-lock.json
 yarn.lock
@@ -12,7 +12,6 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -41,7 +40,7 @@ env.bak/
 .env.*.local
 
 # IDE / Editor
-.vscode/
+
 .idea/
 *.swp
 *.swo
@@ -84,11 +83,7 @@ temp/
 .cache/
 
 # Application specific
-output/
-input/
-storage/
-daemon/
--Force/
+
 *.lnk
 service.port
 
@@ -100,14 +95,8 @@ service.port
 
 # Keep these directories but ignore their contents
 # (git can't track empty directories)
-output/processed_db.json
-output/users.json
-output/1/
-output/2/
-output/rejected/
-output/unprocessed/
-output/unprocessed_real/
-output_json/
+
+
 unprocessed1/
 unprocessed2/
 
