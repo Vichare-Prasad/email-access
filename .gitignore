@@ -3,7 +3,7 @@
 .npm
 package-lock.json
 yarn.lock
-
+node_modules/
 # Python
 __pycache__/
 *.py[cod]
@@ -103,3 +103,5 @@ unprocessed2/
 # Exclude specific files that shouldn't be committed
 processed_db.json
 report.json
+credentials.json
+output/users.json

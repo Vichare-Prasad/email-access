@@ -86,7 +86,7 @@ async function callMainExeAnalyzeEndpoint_sendJson(pdfPaths, passwords = [], ban
     // Put this in server.js (CommonJS style). No need for 'open' or ES modules.
     const sqlite3 = require('sqlite3').verbose();
 
-    function getCategoryMasterData(dbPath = './db.sqlite3', tableName = 'Category_Master') {
+    function getCategoryMasterData(dbPath = path.join(__dirname, 'db.sqlite3'), tableName = 'Category_Master') {
       return new Promise((resolve, reject) => {
         const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
           if (err) return reject(err);
@@ -211,7 +211,7 @@ const categoryMasterData = await getCategoryMasterData();
     
     // Initialize database manager
     const dbManager = DatabaseManager.getInstance();
-    const db = await dbManager.initialize('C:\\Users\\abcom\\Desktop\\beta_testers_ca-uat\\frontend\\db.sqlite3');
+    const db = await dbManager.initialize(path.join(__dirname, 'db.sqlite3'));
     
     console.log("✅ Database connected successfully");
     
@@ -522,6 +522,7 @@ class EmailService {
     this.unprocessedDir = opts.unprocessedDir || path.join(this.outputDir, 'unprocessed');
     this.rejectedDir = opts.rejectedDir || path.join(this.outputDir, 'rejected');
     this.dbPath = opts.dbPath || path.join(this.outputDir, 'email.db');
+
     this.intervalMinutes = opts.intervalMinutes || 0.033;
     this.intervalId = null;
     this.isRunning = false;
@@ -535,10 +536,62 @@ class EmailService {
       'https://www.googleapis.com/auth/userinfo.email',
       'openid'
     ];
-    // this.googleClientId = process.env.GOOGLE_CLIENT_ID || '';
-    // this.googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
-    // this.serverBaseUrl = process.env.SERVER_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+
+    // Load credentials from credentials.json file
+    const creds = this._loadCredentialsFromFile();
+    this.googleClientId = creds.clientId;
+    this.googleClientSecret = creds.clientSecret;
+    this.oauthRedirectUri = creds.redirectUri;
+
+
+    this.serverBaseUrl = process.env.SERVER_BASE_URL || `http://localhost:${process.env.PORT || 8234}`;
     this.usersJsonPath = path.join(this.outputDir, 'users.json');
+  }
+
+  // Load OAuth credentials from credentials.json file
+  _loadCredentialsFromFile() {
+    const credentialsPath = path.join(this.projectRoot || __dirname, 'credentials.json');
+    try {
+      if (fsSync.existsSync(credentialsPath)) {
+        const content = fsSync.readFileSync(credentialsPath, 'utf8');
+        const json = JSON.parse(content);
+
+        // Handle both "web" and "installed" credential types
+        const creds = json.web || json.installed || json;
+
+        if (creds.client_id && creds.client_secret) {
+          console.log('✅ Loaded credentials from credentials.json');
+          console.log(`   Client ID: ${creds.client_id.substring(0, 20)}...`);
+
+          // Extract redirect URI from credentials if available
+          let redirectUri = null;
+          if (creds.redirect_uris && creds.redirect_uris.length > 0) {
+            redirectUri = creds.redirect_uris[0];
+            console.log(`   Redirect URI: ${redirectUri}`);
+          }
+
+          return {
+            clientId: creds.client_id,
+            clientSecret: creds.client_secret,
+            redirectUri: redirectUri
+          };
+        }
+      }
+
+      console.warn('⚠️  credentials.json not found, using fallback');
+      return {
+        clientId: process.env.GOOGLE_CLIENT_ID || '1016771744014-sflkvg8o041amjd34st7ge8sekpttorl.apps.googleusercontent.com',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET || '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',
+        redirectUri: null
+      };
+    } catch (e) {
+      console.error('❌ Error loading credentials.json:', e.message);
+      return {
+        clientId: process.env.GOOGLE_CLIENT_ID || '1016771744014-sflkvg8o041amjd34st7ge8sekpttorl.apps.googleusercontent.com',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+        redirectUri: null
+      };
+    }
   }
 
   // -------------------------
@@ -564,11 +617,11 @@ class EmailService {
     try {
       await this.dbRun(`CREATE TABLE IF NOT EXISTS emails (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id TEXT UNIQUE,
-        from_addr TEXT,
+        message_id TEXT UNIQUE, 
+        from_addr TEXT, 
         subject TEXT,
         processed_at INTEGER
-      )`);
+      )`); 
       await this.dbRun(`CREATE TABLE IF NOT EXISTS attachments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         message_id TEXT,
@@ -660,9 +713,11 @@ class EmailService {
     }
   }
 
-  _createOAuth2Client(redirectPath = '/oauth2callback') {
+  _createOAuth2Client() {
     this._ensureOAuthConfig();
-    const redirectUri = `${this.serverBaseUrl}${redirectPath}`;
+    // Use redirect URI from credentials.json if available, otherwise use default
+    const redirectUri = this.oauthRedirectUri || `${this.serverBaseUrl}/oauth/callback`;
+    console.log(`   Using redirect URI: ${redirectUri}`);
     return new google.auth.OAuth2(this.googleClientId, this.googleClientSecret, redirectUri);
   }
 
@@ -950,7 +1005,7 @@ class EmailService {
       return false;
     }
 
-    this._isScanning = true;
+    this._isScanning = true; 
     
     try {
       const activeEmail = await this.getActiveUserEmail();
@@ -994,13 +1049,11 @@ class EmailService {
   async checkEmails() {
     const didInitial = await this.hasDoneInitialScan();
     const activeEmail = await this.getActiveUserEmail();
-    
+
     if (!activeEmail) {
       console.warn('❌ No active user configured');
       return;
     }
-
-  
 
     let q;
     if (!didInitial) {
@@ -1019,14 +1072,207 @@ class EmailService {
         console.error('❌ Could not create OAuth client - please re-authorize');
         return;
       }
-    // }
-
-
-
     } catch (e) {
       console.error('❌ OAuth client error:', e.message);
       return;
     }
+
+    // Create Gmail API instance
+    const gmail = google.gmail({ version: 'v1', auth: client });
+
+    try {
+      // Step 1: List messages matching our query
+      console.log(`📧 Searching emails with query: "${q}"`);
+
+      let allMessages = [];
+      let pageToken = null;
+
+      do {
+        const listResponse = await gmail.users.messages.list({
+          userId: 'me',
+          q: q,
+          maxResults: 100,
+          pageToken: pageToken
+        });
+
+        const messages = listResponse.data.messages || [];
+        allMessages = allMessages.concat(messages);
+        pageToken = listResponse.data.nextPageToken;
+
+        console.log(`   Found ${messages.length} messages (total: ${allMessages.length})`);
+
+      } while (pageToken && allMessages.length < 500); // Limit to 500 emails max
+
+      if (allMessages.length === 0) {
+        console.log('📭 No emails found matching criteria');
+        if (!didInitial) {
+          await this.setInitialScanDone();
+        }
+        return;
+      }
+
+      console.log(`\n📬 Processing ${allMessages.length} email(s)...`);
+
+      let processedCount = 0;
+      let attachmentCount = 0;
+      let skippedCount = 0;
+
+      // Step 2: Process each message
+      for (let i = 0; i < allMessages.length; i++) {
+        const msg = allMessages[i];
+
+        try {
+          // Check if already processed
+          const existing = await this.dbGet(
+            `SELECT id FROM emails WHERE message_id = ?`,
+            [msg.id]
+          );
+
+          if (existing) {
+            skippedCount++;
+            continue;
+          }
+
+          // Get full message details
+          const fullMessage = await gmail.users.messages.get({
+            userId: 'me',
+            id: msg.id,
+            format: 'full'
+          });
+
+          const headers = fullMessage.data.payload.headers || [];
+          const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
+          const from = headers.find(h => h.name.toLowerCase() === 'from')?.value || 'Unknown';
+
+          console.log(`\n📧 [${i + 1}/${allMessages.length}] ${subject.substring(0, 50)}...`);
+          console.log(`   From: ${from.substring(0, 40)}...`);
+
+          // Step 3: Extract attachments
+          const attachments = await this.extractAttachments(gmail, msg.id, fullMessage.data.payload);
+
+          if (attachments.length > 0) {
+            console.log(`   📎 Found ${attachments.length} attachment(s)`);
+
+            // Save each attachment
+            for (const att of attachments) {
+              const saved = await this.saveAttachment(att.data, att.filename, msg.id);
+              if (saved) {
+                attachmentCount++;
+              }
+            }
+          }
+
+          // Record email as processed
+          const now = Math.floor(Date.now() / 1000);
+          await this.dbRun(
+            `INSERT OR IGNORE INTO emails (message_id, from_addr, subject, processed_at) VALUES (?, ?, ?, ?)`,
+            [msg.id, from, subject, now]
+          );
+
+          processedCount++;
+
+          // Mark as read if incremental scan
+          if (didInitial) {
+            try {
+              await gmail.users.messages.modify({
+                userId: 'me',
+                id: msg.id,
+                requestBody: {
+                  removeLabelIds: ['UNREAD']
+                }
+              });
+            } catch (markErr) {
+              console.warn(`   ⚠️ Could not mark as read: ${markErr.message}`);
+            }
+          }
+
+        } catch (msgErr) {
+          console.error(`   ❌ Error processing message: ${msgErr.message}`);
+        }
+
+        // Rate limiting - small delay between messages
+        if (i > 0 && i % 10 === 0) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+
+      console.log('\n📊 ========================================');
+      console.log('📊 EMAIL SCAN SUMMARY');
+      console.log('📊 ========================================');
+      console.log(`   Total emails found: ${allMessages.length}`);
+      console.log(`   Processed: ${processedCount}`);
+      console.log(`   Skipped (already done): ${skippedCount}`);
+      console.log(`   Attachments saved: ${attachmentCount}`);
+      console.log('========================================\n');
+
+      // Mark initial scan as done
+      if (!didInitial) {
+        await this.setInitialScanDone();
+        console.log('✅ Initial scan completed - future scans will only check unread emails');
+      }
+
+    } catch (err) {
+      console.error('❌ Gmail API error:', err.message);
+      if (err.code === 401 || err.code === 403) {
+        console.error('💡 Token may be expired - try re-authorizing via /auth');
+      }
+    }
+  }
+
+  // Extract attachments from email payload (recursive for multipart)
+  async extractAttachments(gmail, messageId, payload, attachments = []) {
+    const validExtensions = ['.pdf', '.xlsx', '.xls', '.csv', '.xml', '.txt'];
+
+    // Check if this part has an attachment
+    if (payload.filename && payload.filename.length > 0) {
+      const ext = path.extname(payload.filename).toLowerCase();
+
+      if (validExtensions.includes(ext)) {
+        console.log(`   📄 Found: ${payload.filename}`);
+
+        let attachmentData = null;
+
+        // Get attachment data
+        if (payload.body && payload.body.attachmentId) {
+          // Large attachment - need to fetch separately
+          try {
+            const attResponse = await gmail.users.messages.attachments.get({
+              userId: 'me',
+              messageId: messageId,
+              id: payload.body.attachmentId
+            });
+
+            if (attResponse.data && attResponse.data.data) {
+              // Decode base64url to buffer
+              attachmentData = Buffer.from(attResponse.data.data, 'base64url');
+            }
+          } catch (attErr) {
+            console.error(`   ❌ Failed to download attachment: ${attErr.message}`);
+          }
+        } else if (payload.body && payload.body.data) {
+          // Small attachment - data is inline
+          attachmentData = Buffer.from(payload.body.data, 'base64url');
+        }
+
+        if (attachmentData) {
+          attachments.push({
+            filename: payload.filename,
+            mimeType: payload.mimeType,
+            size: attachmentData.length,
+            data: attachmentData
+          });
+        }
+      }
+    }
+
+    // Recursively check parts (for multipart messages)
+    if (payload.parts && Array.isArray(payload.parts)) {
+      for (const part of payload.parts) {
+        await this.extractAttachments(gmail, messageId, part, attachments);
+      }
+    }
+
+    return attachments;
   }
 
   
@@ -1264,44 +1510,90 @@ class EmailService {
 
         // Process results and update DB
         if (jsonObjects.length > 0) {
-          console.log('\n🔄 Updating database with results...');
-          let updatedCount = 0;
-          
+          console.log('\n🔄 Processing classification results...');
+          let bankStatementCount = 0;
+          let duplicateCount = 0;
+          let rejectedCount = 0;
+          let errorCount = 0;
+
           for (const obj of jsonObjects) {
             try {
               const filePath = obj.file_path || obj.path || null;
               const isBank = !!obj.is_bank_statement || !!obj.is_bank;
-              const fileHash = filePath ? await this._computeHashSafe(filePath) : null;
-              
-              if (isBank && fileHash) {
-                await this.ensureUnprocessedPresence(fileHash, filePath, obj.output_path || obj.outputPath || null);
-                updatedCount++;
+
+              if (!filePath || !fscb.existsSync(filePath)) {
+                console.warn(`  ⚠️  File not found: ${filePath}`);
+                errorCount++;
+                continue;
+              }
+
+              const fileHash = await this._computeHashSafe(filePath);
+
+              if (!fileHash) {
+                console.warn(`  ⚠️  Could not compute hash for: ${path.basename(filePath)}`);
+                errorCount++;
+                continue;
+              }
+
+              if (isBank) {
+                // It's a bank statement - move to unprocessed (with duplicate check)
+                const result = await this.ensureUnprocessedPresence(
+                  fileHash,
+                  filePath,
+                  obj.output_path || obj.outputPath || null
+                );
+
+                if (result.success) {
+                  bankStatementCount++;
+                } else if (result.reason === 'duplicate') {
+                  duplicateCount++;
+                } else {
+                  errorCount++;
+                }
+              } else {
+                // Not a bank statement - move to rejected folder
+                const rejected = await this.rejectNonBankStatement(filePath);
+                if (rejected) {
+                  rejectedCount++;
+                } else {
+                  errorCount++;
+                }
               }
             } catch (e) {
               console.warn('⚠️  Error processing result:', e.message);
+              errorCount++;
             }
           }
-          
-          console.log(`✅ Updated ${updatedCount} file(s) in database`);
+
+          console.log('\n📊 Processing Summary:');
+          console.log(`   ✅ Bank statements saved: ${bankStatementCount}`);
+          console.log(`   ↩️  Duplicates rejected: ${duplicateCount}`);
+          console.log(`   🚫 Non-bank rejected: ${rejectedCount}`);
+          if (errorCount > 0) {
+            console.log(`   ❌ Errors: ${errorCount}`);
+          }
         }
 
         console.log(`⏱️  Total duration: ${duration}s`);
         console.log('✅ Classifier completed\n');
         
         
-        resolve({ 
-          ok: true, 
-          parsed: jsonObjects, 
+        resolve({
+          ok: true,
+          parsed: jsonObjects,
           raw: out,
           duration,
           filesProcessed: jsonObjects.length,
           bankStatements: jsonObjects.filter(obj => !!obj.is_bank_statement || !!obj.is_bank).length
         });
-        await callMainExeAnalyzeEndpoint_sendJson(
-        ['pdfPath'],           // the PDF path(s)
-        ["password_if_any"],  // optional passwords
-        ["hdfc"]         // bank names
-        );
+
+        // TODO: Re-enable when main.exe FastAPI backend is available
+        // await callMainExeAnalyzeEndpoint_sendJson(
+        // ['pdfPath'],           // the PDF path(s)
+        // ["password_if_any"],  // optional passwords
+        // ["hdfc"]         // bank names
+        // );
+        console.log('ℹ️  FastAPI analysis skipped (main.exe not configured yet)');
       });
 
     
@@ -1319,10 +1611,10 @@ class EmailService {
       await callMainExeAnalyzeEndpoint(files);
     } else {
       console.log("ℹ️ No unprocessed PDFs found to send.");
-      } 
+      }
     }
 
-}
+  }
 
   async _computeHashSafe(filePath) {
     try {
@@ -1331,6 +1623,192 @@ class EmailService {
     } catch (e) {
       return null;
     }
+  }
+
+  // Check if file hash already exists in database (any status)
+  async isDuplicateInUnprocessed(fileHash) {
+    try {
+      // Check if file with same hash exists anywhere in database
+      const row = await this.dbGet(
+        `SELECT id, path FROM attachments WHERE file_hash = ?`,
+        [fileHash]
+      );
+      return row ? row : null;
+    } catch (e) {
+      console.warn('isDuplicateInUnprocessed error:', e.message);
+      return null;
+    }
+  }
+
+  // Check if file with same hash already exists in unprocessed folder by scanning files
+  async isDuplicateByContentInFolder(fileHash) {
+    try {
+      if (!fscb.existsSync(this.unprocessedDir)) return null;
+
+      const files = await fs.readdir(this.unprocessedDir);
+      for (const file of files) {
+        const filePath = path.join(this.unprocessedDir, file);
+        try {
+          const stat = await fs.stat(filePath);
+          if (stat.isFile()) {
+            const existingHash = await this.computeFileHash(filePath);
+            if (existingHash === fileHash) {
+              return { exists: true, path: filePath };
+            }
+          }
+        } catch (e) {
+          // Skip files that can't be read
+          continue;
+        }
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Move file to unprocessed folder, reject if duplicate
+  async ensureUnprocessedPresence(fileHash, sourcePath, outputPath = null) {
+    try {
+      // Check 1: Check database for duplicate hash
+      const existingInDb = await this.isDuplicateInUnprocessed(fileHash);
+      if (existingInDb) {
+        console.log(`  ↩️  DUPLICATE DETECTED (DB): ${path.basename(sourcePath)}`);
+        console.log(`     Already exists as: ${path.basename(existingInDb.path)}`);
+        // Delete the duplicate file instead of moving to rejected
+        try {
+          await fs.unlink(sourcePath);
+          console.log(`  🗑️  Deleted duplicate: ${path.basename(sourcePath)}`);
+        } catch (e) {
+          console.warn(`  ⚠️  Could not delete duplicate: ${e.message}`);
+        }
+        return { success: false, reason: 'duplicate', existingPath: existingInDb.path };
+      }
+
+      // Check 2: Scan unprocessed folder for duplicate content
+      const existingInFolder = await this.isDuplicateByContentInFolder(fileHash);
+      if (existingInFolder) {
+        console.log(`  ↩️  DUPLICATE DETECTED (Folder): ${path.basename(sourcePath)}`);
+        console.log(`     Already exists as: ${path.basename(existingInFolder.path)}`);
+        // Delete the duplicate file
+        try {
+          await fs.unlink(sourcePath);
+          console.log(`  🗑️  Deleted duplicate: ${path.basename(sourcePath)}`);
+        } catch (e) {
+          console.warn(`  ⚠️  Could not delete duplicate: ${e.message}`);
+        }
+        return { success: false, reason: 'duplicate', existingPath: existingInFolder.path };
+      }
+
+      // Determine destination path
+      const fileName = path.basename(sourcePath);
+      let destPath = outputPath || path.join(this.unprocessedDir, fileName);
+
+      // Handle filename collision - but first check if existing file has same content
+      if (await this._exists(destPath)) {
+        const existingHash = await this.computeFileHash(destPath);
+        if (existingHash === fileHash) {
+          // Same content, it's a duplicate
+          console.log(`  ↩️  DUPLICATE DETECTED (Same file): ${path.basename(sourcePath)}`);
+          try {
+            await fs.unlink(sourcePath);
+            console.log(`  🗑️  Deleted duplicate: ${path.basename(sourcePath)}`);
+          } catch (e) {
+            console.warn(`  ⚠️  Could not delete duplicate: ${e.message}`);
+          }
+          return { success: false, reason: 'duplicate', existingPath: destPath };
+        }
+
+        // Different content but same filename - rename with counter
+        const { name, ext } = this._splitNameExt(fileName);
+        let counter = 1;
+        do {
+          destPath = path.join(this.unprocessedDir, `${name}_${counter}${ext}`);
+          counter++;
+        } while (await this._exists(destPath));
+      }
+
+      // Ensure unprocessed directory exists
+      await fs.mkdir(this.unprocessedDir, { recursive: true });
+
+      // Copy file to unprocessed folder
+      if (sourcePath !== destPath) {
+        await fs.copyFile(sourcePath, destPath);
+        console.log(`  ✅ Copied to unprocessed: ${path.basename(destPath)}`);
+      }
+
+      // Update database - mark as bank statement
+      const now = Math.floor(Date.now() / 1000);
+      await this.dbRun(
+        `UPDATE attachments SET is_bank_statement = 1, classified_at = ?, path = ? WHERE file_hash = ?`,
+        [now, destPath, fileHash]
+      );
+
+      // Remove from input folder after successful copy
+      if (sourcePath !== destPath && fscb.existsSync(sourcePath)) {
+        try {
+          await fs.unlink(sourcePath);
+          console.log(`  🗑️  Removed from input: ${path.basename(sourcePath)}`);
+        } catch (e) {
+          console.warn(`  ⚠️  Could not remove source file: ${e.message}`);
+        }
+      }
+
+      return { success: true, destPath };
+    } catch (e) {
+      console.error('ensureUnprocessedPresence error:', e.message);
+      return { success: false, reason: 'error', error: e.message };
+    }
+  }
+
+  // Move file to rejected folder
+  async moveToRejected(filePath, reason = 'unknown') {
+    try {
+      if (!fscb.existsSync(filePath)) {
+        console.warn(`  ⚠️  File not found for rejection: ${filePath}`);
+        return false;
+      }
+
+      await fs.mkdir(this.rejectedDir, { recursive: true });
+
+      const fileName = path.basename(filePath);
+      const { name, ext } = this._splitNameExt(fileName);
+
+      // Add reason suffix to filename
+      let destPath = path.join(this.rejectedDir, `${name}_${reason}${ext}`);
+
+      // Handle filename collision
+      if (await this._exists(destPath)) {
+        let counter = 1;
+        do {
+          destPath = path.join(this.rejectedDir, `${name}_${reason}_${counter}${ext}`);
+          counter++;
+        } while (await this._exists(destPath));
+      }
+
+      // Move file
+      await fs.rename(filePath, destPath);
+      console.log(`  🚫 Rejected: ${path.basename(destPath)} (${reason})`);
+
+      // Update database
+      const fileHash = await this._computeHashSafe(destPath);
+      if (fileHash) {
+        await this.dbRun(
+          `UPDATE attachments SET is_bank_statement = 0, path = ? WHERE file_hash = ?`,
+          [destPath, fileHash]
+        );
+      }
+
+      return destPath;
+    } catch (e) {
+      console.error('moveToRejected error:', e.message);
+      return false;
+    }
+  }
+
+  // Move non-bank statement files to rejected folder
+  async rejectNonBankStatement(filePath) {
+    return await this.moveToRejected(filePath, 'not_bank_statement');
   }
 
   async getStats() {
@@ -1484,8 +1962,53 @@ res.json({ success: true, parsed: handled.parsedData, totalTransactions: handled
     }
   });
 
-  
+  // Also handle /oauth/callback to match credentials.json redirect_uri
+  app.get('/oauth/callback', async (req, res) => {
+    const code = req.query.code;
+    if (!code) {
+      return res.status(400).send('❌ Missing authorization code');
+    }
 
+    try {
+      console.log('\n🔐 ========================================');
+      console.log('🔐 PROCESSING OAUTH CALLBACK (/oauth/callback)');
+      console.log('🔐 ========================================');
+
+      const email = await svc.handleOAuthCode(code);
+
+      console.log(`✅ Authentication successful for: ${email}`);
+
+      // Reset scan flag to force full initial scan
+      await svc.resetInitialScanFlag();
+
+      // Start service with force full scan
+      console.log('🚀 Starting email scanning service...\n');
+      const started = await svc.start(true);
+
+      if (!started) {
+        throw new Error('Failed to start service');
+      }
+
+      res.send(`
+        <h2>✅ Authentication Successful!</h2>
+        <h3>Email: ${email}</h3>
+        <p>✅ Service started - scanning all emails with attachments</p>
+        <p>✅ Initial full scan in progress</p>
+        <p>✅ Future scans will check for new unread emails</p>
+        <hr>
+        <p><a href="/status">View Status</a> | <a href="/trigger">Trigger Manual Scan</a></p>
+        <p><small>You can close this window now. The service will continue running.</small></p>
+      `);
+
+    } catch (e) {
+      console.error('❌ OAuth callback error:', e.message);
+      res.status(500).send(`
+        <h2>❌ Authentication Failed</h2>
+        <p>Error: ${e.message}</p>
+        <p><a href="/auth">Try Again</a></p>
+      `);
+    }
+  });
 
   app.get('/users', async (req, res) => {
     try {
@@ -1745,7 +2268,8 @@ if (require.main === module) {
       console.log('✅ Service initialized\n');
 
       console.log('🌐 Starting web authentication server...');
-      await startWebAuthServer(svc, process.env.PORT || 3000);
+      // Use port 8234 to match credentials.json redirect_uri, or PORT env var
+      await startWebAuthServer(svc, process.env.PORT || 8234);
 
       // Check if we already have an active user
       const activeEmail = await svc.getActiveUserEmail();
