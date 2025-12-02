@@ -1,0 +1,15 @@
+{
+  "pkg": {
+    "scripts": [
+      "src/**/*.js"
+    ],
+    "assets": [
+      "credentials.json"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist",
+    "compress": "GZip"
+  }
+}

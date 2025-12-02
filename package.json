@@ -1,18 +1,52 @@
 {
   "name": "email-access",
   "version": "1.0.0",
-  "description": "Gmail scanner for bank statement processing",
+  "description": "Gmail scanner for bank statement processing - CypherEdge Integration",
   "main": "src/index.js",
+  "bin": {
+    "emailService": "src/background.js"
+  },
   "scripts": {
     "start": "node src/index.js",
+    "start:background": "node src/background.js",
+    "start:setup": "node src/background.js --setup",
+    "start:scan": "node src/background.js --scan",
     "start:legacy": "node serverdd.js",
+    "build": "npm run prebuild && npm run bundle && npm run pkg && npm run postbuild",
+    "bundle": "npx esbuild src/background.js --bundle --platform=node --target=node18 --outfile=dist/bundle.cjs --external:sqlite3",
+    "pkg": "npx pkg dist/bundle.cjs --targets node18-win-x64 --output dist/emailService.exe --config pkg.config.json",
+    "build:win": "npm run build",
+    "build:all": "pkg src/background.js --targets node18-win-x64,node18-macos-x64,node18-linux-x64 --output dist/emailService --config pkg.config.json",
+    "prebuild": "npm run copy-assets",
+    "copy-assets": "node scripts/copy-assets.js",
+    "postbuild": "node scripts/post-build.js",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "pkg": {
+    "scripts": [
+      "src/**/*.js"
+    ],
+    "assets": [
+      "credentials.json",
+      "node_modules/sqlite3/build/Release/*.node",
+      "node_modules/sqlite3/lib/binding/**/*.node"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Vichare-Prasad/email-access.git"
   },
-  "keywords": [],
+  "keywords": [
+    "gmail",
+    "bank-statement",
+    "pdf",
+    "scanner",
+    "cypheredge"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
@@ -29,6 +63,12 @@
     "form-data": "^4.0.5",
     "googleapis": "^166.0.0",
     "open": "^8.4.2",
+    "pdf-lib": "^1.17.1",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "nexe": "^5.0.0-beta.4",
+    "pkg": "^5.8.1"
   }
 }
