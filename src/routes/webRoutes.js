@@ -271,6 +271,24 @@ function createRouter(svc, fastApiClient) {
       const isScanning = svc._isScanning;
       const didInitial = await svc.hasDoneInitialScan();
 
+      // Build per-user stats table
+      let perUserHtml = '';
+      if (stats.perUser && stats.perUser.length > 0) {
+        perUserHtml = `
+          <h3>Attachments by User</h3>
+          <table border="1" cellpadding="10">
+            <tr><th>User Email</th><th>Total</th><th>Bank Statements</th></tr>
+            ${stats.perUser.map(u => `
+              <tr>
+                <td>${u.user_email || '(unknown)'}</td>
+                <td>${u.total}</td>
+                <td>${u.bank}</td>
+              </tr>
+            `).join('')}
+          </table>
+        `;
+      }
+
       res.send(`
         <h2>Service Status</h2>
         <table border="1" cellpadding="10">
@@ -282,6 +300,7 @@ function createRouter(svc, fastApiClient) {
           <tr><td><strong>Total Attachments:</strong></td><td>${stats.total}</td></tr>
           <tr><td><strong>Bank Statements:</strong></td><td>${stats.bank}</td></tr>
         </table>
+        ${perUserHtml}
         <hr>
         <p>
           <a href="/trigger">Trigger Scan</a> |

@@ -63,6 +63,7 @@ class EmailService {
       await this.dbRun(`CREATE TABLE IF NOT EXISTS emails (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         message_id TEXT UNIQUE,
+        user_email TEXT,
         from_addr TEXT,
         subject TEXT,
         processed_at INTEGER
@@ -70,6 +71,7 @@ class EmailService {
       await this.dbRun(`CREATE TABLE IF NOT EXISTS attachments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         message_id TEXT,
+        user_email TEXT,
         filename TEXT,
         path TEXT,
         file_hash TEXT,
@@ -78,6 +80,20 @@ class EmailService {
         UNIQUE(file_hash)
       )`);
       await this.dbRun(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`);
+
+      // Add user_email column if it doesn't exist (for existing databases)
+      try {
+        await this.dbRun(`ALTER TABLE emails ADD COLUMN user_email TEXT`);
+        console.log('Added user_email column to emails table');
+      } catch (e) {
+        // Column already exists, ignore
+      }
+      try {
+        await this.dbRun(`ALTER TABLE attachments ADD COLUMN user_email TEXT`);
+        console.log('Added user_email column to attachments table');
+      } catch (e) {
+        // Column already exists, ignore
+      }
     } catch (err) {
       console.error('DB init error:', err);
     }
@@ -355,20 +371,21 @@ class EmailService {
 
           if (attachments.length > 0) {
             console.log(`   Found ${attachments.length} attachment(s)`);
+            console.log(`   User: ${activeEmail}`);
 
             for (const att of attachments) {
-              const saved = await this.saveAttachment(att.data, att.filename, msg.id);
+              const saved = await this.saveAttachment(att.data, att.filename, msg.id, activeEmail);
               if (saved) {
                 attachmentCount++;
               }
             }
           }
 
-          // Record email as processed
+          // Record email as processed (with user_email)
           const now = Math.floor(Date.now() / 1000);
           await this.dbRun(
-            `INSERT OR IGNORE INTO emails (message_id, from_addr, subject, processed_at) VALUES (?, ?, ?, ?)`,
-            [msg.id, from, subject, now]
+            `INSERT OR IGNORE INTO emails (message_id, user_email, from_addr, subject, processed_at) VALUES (?, ?, ?, ?, ?)`,
+            [msg.id, activeEmail, from, subject, now]
           );
 
           processedCount++;
@@ -426,13 +443,16 @@ class EmailService {
     }
   }
 
-  async saveAttachment(fileBuffer, filename, messageId = null) {
+  async saveAttachment(fileBuffer, filename, messageId = null, userEmail = null) {
     try {
       await fs.mkdir(this.inputDir, { recursive: true });
 
-      let target = path.join(this.inputDir, filename);
+      // Sanitize filename - remove path separators
+      const sanitizedFilename = filename.replace(/[\\/]/g, '_');
+
+      let target = path.join(this.inputDir, sanitizedFilename);
       if (await exists(target)) {
-        const { name, ext } = splitNameExt(filename);
+        const { name, ext } = splitNameExt(sanitizedFilename);
         let i = 1;
         do {
           target = path.join(this.inputDir, `${name}_${i}${ext}`);
@@ -445,18 +465,18 @@ class EmailService {
       const fileHash = await this.computeFileHash(target);
 
       if (await this.isFileAlreadySaved(fileHash)) {
-        console.log(`  Skipping duplicate: ${filename}`);
+        console.log(`  Skipping duplicate: ${sanitizedFilename}`);
         try { await fs.unlink(target); } catch (_) {}
         return false;
       }
 
       await this.dbRun(
-        `INSERT INTO attachments (message_id, filename, path, file_hash, classified_at) VALUES (?, ?, ?, ?, ?)`,
-        [messageId, path.basename(target), target, fileHash, null]
+        `INSERT INTO attachments (message_id, user_email, filename, path, file_hash, classified_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [messageId, userEmail, path.basename(target), target, fileHash, null]
       );
 
-      console.log(`  Saved: ${path.basename(target)}`);
-      return { path: target, fileHash };
+      console.log(`  Saved: ${path.basename(target)} [${userEmail}]`);
+      return { path: target, fileHash, userEmail };
     } catch (err) {
       console.error('  Save error:', err.message);
       return false;
@@ -716,11 +736,32 @@ class EmailService {
   async getStats() {
     const t = await this.dbGet(`SELECT COUNT(*) AS c FROM attachments`);
     const b = await this.dbGet(`SELECT COUNT(*) AS c FROM attachments WHERE is_bank_statement=1`);
-    return { total: t ? t.c : 0, bank: b ? b.c : 0 };
+
+    // Per-user stats
+    const perUser = await this.dbAll(`
+      SELECT user_email, COUNT(*) as total,
+             SUM(CASE WHEN is_bank_statement = 1 THEN 1 ELSE 0 END) as bank
+      FROM attachments
+      WHERE user_email IS NOT NULL
+      GROUP BY user_email
+    `);
+
+    return {
+      total: t ? t.c : 0,
+      bank: b ? b.c : 0,
+      perUser: perUser || []
+    };
   }
 
   async getFiles() {
     return await this.dbAll(`SELECT * FROM attachments ORDER BY id DESC LIMIT 200`);
+  }
+
+  async getFilesByUser(userEmail) {
+    return await this.dbAll(
+      `SELECT * FROM attachments WHERE user_email = ? ORDER BY id DESC LIMIT 200`,
+      [userEmail]
+    );
   }
 }
 
