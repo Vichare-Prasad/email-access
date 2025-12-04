@@ -12,6 +12,7 @@ const { computeFileHash } = require('../utils/fileUtils');
 const GmailClient = require('./GmailClient');
 const BankDetector = require('./BankDetector');
 const PasswordChecker = require('./PasswordChecker');
+const PatternMatcher = require('./PatternMatcher');
 const AutoFetchDatabase = require('../db/AutoFetchDatabase');
 const SettingsManager = require('./SettingsManager');
 
@@ -34,6 +35,7 @@ class AutoFetchEmailService {
     this.gmailClient = new GmailClient(config, this.tokenStore);
     this.bankDetector = new BankDetector();
     this.passwordChecker = new PasswordChecker();
+    this.patternMatcher = new PatternMatcher();
     this.database = new AutoFetchDatabase();
     this.settingsManager = new SettingsManager(this.settingsPath);
 
@@ -283,15 +285,6 @@ class AutoFetchEmailService {
           const dateHeader = headers.find(h => h.name.toLowerCase() === 'date')?.value;
           const emailDate = dateHeader ? Math.floor(new Date(dateHeader).getTime() / 1000) : null;
 
-          // Pre-filter: Check if likely bank statement email
-          if (!this.bankDetector.isBankStatementEmail({ sender: from, subject })) {
-            // Skip non-bank emails silently
-            continue;
-          }
-
-          console.log(`\n[${i + 1}/${messages.length}] ${subject.substring(0, 50)}...`);
-          console.log(`   From: ${from.substring(0, 40)}...`);
-
           // Extract PDF attachments only
           const attachments = await this.extractPdfAttachments(client, msg.id, fullMessage.data.payload);
 
@@ -299,11 +292,32 @@ class AutoFetchEmailService {
             continue;
           }
 
-          result.processed++;
-          console.log(`   Found ${attachments.length} PDF attachment(s)`);
-
+          // Filter attachments using PatternMatcher (fuzzy filename detection)
+          const bankStatementAttachments = [];
           for (const att of attachments) {
+            const detection = this.patternMatcher.detectBankStatement(att.filename);
+            if (detection.isStatement) {
+              bankStatementAttachments.push({
+                ...att,
+                detection: detection
+              });
+            }
+          }
+
+          if (bankStatementAttachments.length === 0) {
+            // No bank statements in this email, skip silently
+            continue;
+          }
+
+          console.log(`\n[${i + 1}/${messages.length}] ${subject.substring(0, 50)}...`);
+          console.log(`   From: ${from.substring(0, 40)}...`);
+          console.log(`   Found ${bankStatementAttachments.length} bank statement PDF(s) out of ${attachments.length} total`);
+
+          result.processed++;
+
+          for (const att of bankStatementAttachments) {
             result.attachments++;
+            console.log(`   -> ${att.filename} (${Math.round(att.detection.confidence * 100)}% confidence: ${att.detection.reason})`);
 
             // Save and process the attachment
             const saveResult = await this.saveAndProcessAttachment({
@@ -312,7 +326,8 @@ class AutoFetchEmailService {
               gmailAccount: email,
               emailSubject: subject,
               emailFrom: from,
-              emailDate: emailDate
+              emailDate: emailDate,
+              detectionResult: att.detection
             });
 
             if (saveResult.success) {
@@ -341,18 +356,9 @@ class AutoFetchEmailService {
   }
 
   /**
-   * Build Gmail search query focused on bank statements
+   * Build Gmail search query - fetches ALL PDFs, filtering happens at filename level
    */
   buildBankStatementQuery() {
-    const keywords = config.emailSubjectKeywords || [];
-    const domains = this.bankDetector.getKnownBankDomains();
-
-    // Build OR query for subject keywords
-    const subjectParts = keywords.map(k => `subject:"${k}"`);
-
-    // Build OR query for sender domains
-    const fromParts = domains.slice(0, 10).map(d => `from:@${d}`);
-
     // Get date filter from settings
     let dateFilter;
     if (this.settingsManager && this.settingsManager.loaded) {
@@ -365,8 +371,9 @@ class AutoFetchEmailService {
       dateFilter = `newer_than:${days}d`;
     }
 
-    // Simplified query that focuses on PDFs with statement-related keywords
-    const query = `has:attachment filename:pdf ${dateFilter} (${subjectParts.join(' OR ')} OR ${fromParts.join(' OR ')})`;
+    // Fetch ALL emails with PDF attachments - filtering by filename is smarter
+    // PatternMatcher will determine which PDFs are bank statements
+    const query = `has:attachment filename:pdf ${dateFilter}`;
 
     return query;
   }
@@ -428,7 +435,7 @@ class AutoFetchEmailService {
   /**
    * Save attachment and record metadata in database
    */
-  async saveAndProcessAttachment({ attachment, messageId, gmailAccount, emailSubject, emailFrom, emailDate }) {
+  async saveAndProcessAttachment({ attachment, messageId, gmailAccount, emailSubject, emailFrom, emailDate, detectionResult }) {
     try {
       // Create account-specific subdirectory
       const accountDir = path.join(this.pdfOutputDir, this.sanitizeEmail(gmailAccount));
@@ -451,15 +458,30 @@ class AutoFetchEmailService {
 
       // Save file
       await fs.writeFile(targetPath, attachment.data);
-      console.log(`   Saved: ${path.basename(targetPath)}`);
+      console.log(`      Saved: ${path.basename(targetPath)}`);
 
-      // Detect bank from filename and sender
-      const bankResult = this.bankDetector.detect({
-        filename: attachment.filename,
-        sender: emailFrom,
-        subject: emailSubject
-      });
-      console.log(`   Bank: ${bankResult.name} (${bankResult.method})`);
+      // Use detection result from PatternMatcher if available, fallback to BankDetector
+      let bankResult;
+      if (detectionResult && detectionResult.matches) {
+        // Extract bank name from pattern matches
+        const bankMatch = detectionResult.matches.find(m => m.type === 'bank');
+        if (bankMatch) {
+          bankResult = {
+            name: this.bankDetector.normalizeBankName(bankMatch.pattern),
+            method: 'pattern_matcher'
+          };
+        }
+      }
+
+      // Fallback to BankDetector if PatternMatcher didn't find a bank name
+      if (!bankResult || bankResult.name === 'Unknown') {
+        bankResult = this.bankDetector.detect({
+          filename: attachment.filename,
+          sender: emailFrom,
+          subject: emailSubject
+        });
+      }
+      console.log(`      Bank: ${bankResult.name} (${bankResult.method})`);
 
       // Check if password protected
       const passwordResult = await this.passwordChecker.checkPdfProtection(targetPath);

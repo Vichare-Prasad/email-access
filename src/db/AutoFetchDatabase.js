@@ -264,6 +264,42 @@ class AutoFetchDatabase {
   }
 
   /**
+   * Update password protection status for a statement by ID
+   */
+  async updatePasswordProtection(id, isProtected) {
+    const now = Math.floor(Date.now() / 1000);
+    return await this.run(`
+      UPDATE auto_fetched_statements
+      SET is_password_protected = ?,
+          status = CASE
+            WHEN status = 'needs_password' AND ? = 0 THEN 'pending'
+            WHEN status = 'pending' AND ? = 1 THEN 'needs_password'
+            ELSE status
+          END,
+          updated_at = ?
+      WHERE id = ?
+    `, [isProtected, isProtected, isProtected, now, id]);
+  }
+
+  /**
+   * Update password protection status by email_message_id (more reliable than id)
+   */
+  async updatePasswordProtectionByMessageId(emailMessageId, isProtected) {
+    const now = Math.floor(Date.now() / 1000);
+    return await this.run(`
+      UPDATE auto_fetched_statements
+      SET is_password_protected = ?,
+          status = CASE
+            WHEN status = 'needs_password' AND ? = 0 THEN 'pending'
+            WHEN status = 'pending' AND ? = 1 THEN 'needs_password'
+            ELSE status
+          END,
+          updated_at = ?
+      WHERE email_message_id = ?
+    `, [isProtected, isProtected, isProtected, now, emailMessageId]);
+  }
+
+  /**
    * Get statement by ID
    */
   async getById(id) {

@@ -1,0 +1,134 @@
+{
+  "version": "1.0",
+  "description": "Bank statement detection patterns - easily updatable",
+
+  "bankNames": [
+    "hdfc", "hdfcbank",
+    "sbi", "statebank", "statebankof",
+    "icici", "icicibank",
+    "axis", "axisbank",
+    "kotak", "kotakbank", "kotakmahindra",
+    "yes", "yesbank",
+    "indusind", "indusindbank",
+    "canara", "canarabank",
+    "pnb", "punjab", "punjabnational",
+    "bob", "baroda", "bankofbaroda",
+    "union", "unionbank",
+    "idbi", "idbibank",
+    "federal", "federalbank",
+    "rbl", "rblbank",
+    "bandhan", "bandhanbank",
+    "dbs", "dbsbank",
+    "hsbc",
+    "citi", "citibank",
+    "sc", "scb", "standardchartered",
+    "deutsche",
+    "bnp", "paribas",
+    "uco", "ucobank",
+    "iob", "indianoverseas",
+    "boi", "bankofindia",
+    "centralbank",
+    "indianbank",
+    "syndicatebank",
+    "andhrabank",
+    "allahabadbank",
+    "corporation", "corporationbank",
+    "vijayabank",
+    "denabank",
+    "equitas",
+    "au", "aubank", "ausmallfinance",
+    "ujjivan",
+    "janasmall", "janabank",
+    "fincare",
+    "esaf",
+    "suryoday",
+    "utkarsh",
+    "paytm", "paytmbank",
+    "airtel", "airtelbank",
+    "fino", "finobank"
+  ],
+
+  "statementKeywords": {
+    "exact": [
+      "statement", "e-statement", "estatement", "e_statement",
+      "stmt", "stmnt", "sttmnt",
+      "bankstatement", "bank_statement", "bank-statement",
+      "accountstatement", "account_statement", "account-statement",
+      "ministatement", "mini_statement", "mini-statement"
+    ],
+    "variations": [
+      "statment", "statemnt", "statmnt", "staement", "statemen",
+      "statemnet", "statemetn", "sttament", "stataement"
+    ]
+  },
+
+  "accountKeywords": {
+    "exact": [
+      "account", "acct", "acc", "ac",
+      "savings", "saving", "savingsacc", "savingsacct",
+      "current", "currentacc", "currentacct",
+      "salary", "salaryacc", "salaryacct",
+      "nre", "nro", "fcnr",
+      "od", "overdraft", "cc", "cashcredit"
+    ],
+    "variations": [
+      "acount", "accnt", "accout", "acconut", "accountt"
+    ]
+  },
+
+  "transactionKeywords": [
+    "transaction", "transactions", "txn", "txns", "trxn",
+    "passbook", "ledger", "summary",
+    "history", "activity", "details"
+  ],
+
+  "timeIndicators": [
+    "jan", "feb", "mar", "apr", "may", "jun",
+    "jul", "aug", "sep", "oct", "nov", "dec",
+    "january", "february", "march", "april", "june",
+    "july", "august", "september", "october", "november", "december",
+    "monthly", "quarterly", "yearly", "annual",
+    "q1", "q2", "q3", "q4",
+    "2020", "2021", "2022", "2023", "2024", "2025", "2026"
+  ],
+
+  "creditCardKeywords": [
+    "creditcard", "credit_card", "credit-card", "cc",
+    "cardstatement", "card_statement", "card-statement",
+    "visa", "mastercard", "rupay", "amex", "americanexpress", "diners"
+  ],
+
+  "negativeKeywords": [
+    "invoice", "invoices",
+    "receipt", "receipts",
+    "bill", "bills", "billing",
+    "contract", "contracts",
+    "agreement", "agreements",
+    "quotation", "quotations", "quote",
+    "proposal", "proposals",
+    "brochure", "brochures",
+    "form", "forms", "application",
+    "kyc", "kycform",
+    "pan", "pancard",
+    "aadhar", "aadhaar",
+    "cheque", "check", "chequebook",
+    "dd", "demandraft", "draft",
+    "certificate", "certificates",
+    "letter", "letters",
+    "circular", "circulars",
+    "notice", "notices",
+    "policy", "policies",
+    "tnc", "termsandconditions",
+    "faq", "guide", "manual",
+    "presentation", "ppt",
+    "resume", "cv"
+  ],
+
+  "customPatterns": [],
+
+  "fuzzyConfig": {
+    "enabled": true,
+    "threshold": 0.75,
+    "maxDistance": 2
+  }
+}

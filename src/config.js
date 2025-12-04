@@ -23,32 +23,26 @@ const projectRoot = path.resolve(__dirname, '..');
 const exeDir = getExeDir();
 
 // Determine CypherEdge user data path
-// In production (packaged exe): %APPDATA%/CypherEdge
-// In development: CypherEdge frontend folder (same DB as Electron dev)
-// Can override with CYPHEREDGE_USER_DATA env var
+// Matches Electron's db.js logic:
+//   - Dev (not packaged): frontend/ folder
+//   - Prod (packaged): %APPDATA%/CypherEdge/
 const getCypherEdgeDataPath = () => {
   // Allow explicit override
   if (process.env.CYPHEREDGE_USER_DATA) {
     return process.env.CYPHEREDGE_USER_DATA;
   }
 
-  // In development mode (not packaged), use CypherEdge frontend folder
-  // so we share the same database as CypherEdge dev mode
-  if (!isPackaged && process.env.NODE_ENV !== 'production') {
-    const cypherEdgeDevPath = path.resolve(__dirname, '../../beta_testers_ca/frontend');
+  // Dev mode: use frontend folder (same as Electron dev)
+  if (!isPackaged) {
+    const frontendPath = path.resolve(__dirname, '../../beta_testers_ca/frontend');
     const fs = require('fs');
-    if (fs.existsSync(cypherEdgeDevPath)) {
-      return cypherEdgeDevPath;
+    if (fs.existsSync(frontendPath)) {
+      return frontendPath;
     }
   }
 
-  // Production: AppData/CypherEdge on Windows
-  if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'CypherEdge');
-  }
-
-  // On Mac/Linux, use home directory
-  return path.join(os.homedir(), '.cypheredge');
+  // Prod mode: %APPDATA%/CypherEdge (same as Electron prod)
+  return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'CypherEdge');
 };
 
 const cypherEdgeDataPath = getCypherEdgeDataPath();

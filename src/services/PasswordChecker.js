@@ -8,6 +8,13 @@ const { PDFDocument } = require('pdf-lib');
 class PasswordChecker {
   /**
    * Check if a PDF file is password-protected by attempting to open it
+   *
+   * PDFs can have two types of passwords:
+   * 1. User password - required to OPEN the PDF (we care about this)
+   * 2. Owner password - restricts editing/printing but PDF can still be opened (we don't care)
+   *
+   * We only mark as "protected" if user password is required.
+   *
    * @param {string} filePath - Path to PDF file
    * @returns {Promise<Object>} { isProtected: boolean, error: string|null }
    */
@@ -21,34 +28,48 @@ class PasswordChecker {
       // Read the entire PDF file
       const pdfBytes = await fs.readFile(filePath);
 
+      // First, try to load without ignoring encryption
       try {
-        // Attempt to load the PDF without a password
-        // pdf-lib will throw if the PDF requires a password to open
         const pdfDoc = await PDFDocument.load(pdfBytes, {
-          ignoreEncryption: false,  // Don't ignore encryption - we want to detect it
+          ignoreEncryption: false,
           throwOnInvalidObject: false,
           updateMetadata: false
         });
 
-        // If we get here, the PDF loaded successfully without a password
-        // Try to access the page count to ensure we can actually read it
+        // If we get here, PDF is completely unencrypted
         const pageCount = pdfDoc.getPageCount();
-
-        console.log(`[PasswordChecker] ${filePath}: Not protected (${pageCount} pages)`);
+        console.log(`[PasswordChecker] ${filePath}: Not encrypted (${pageCount} pages)`);
         return { isProtected: false, error: null };
 
       } catch (loadError) {
         const errorMsg = loadError.message?.toLowerCase() || '';
 
-        // Check if the error is due to encryption/password
+        // Check if the error is due to encryption
         if (errorMsg.includes('encrypted') ||
             errorMsg.includes('password') ||
             errorMsg.includes('decrypt') ||
-            errorMsg.includes('user password') ||
-            errorMsg.includes('owner password') ||
             errorMsg.includes('encryption')) {
-          console.log(`[PasswordChecker] ${filePath}: Password protected - ${loadError.message}`);
-          return { isProtected: true, error: null };
+
+          // PDF is encrypted - but is it USER password or just OWNER password?
+          // Try to load with ignoreEncryption: true
+          try {
+            const pdfDoc = await PDFDocument.load(pdfBytes, {
+              ignoreEncryption: true,  // Ignore owner restrictions
+              throwOnInvalidObject: false,
+              updateMetadata: false
+            });
+
+            // If we get here, PDF only has OWNER password (edit restrictions)
+            // We can still read it, so it's NOT protected for our purposes
+            const pageCount = pdfDoc.getPageCount();
+            console.log(`[PasswordChecker] ${filePath}: Owner-only encryption, readable (${pageCount} pages)`);
+            return { isProtected: false, error: null };
+
+          } catch (secondLoadError) {
+            // PDF requires USER password to open - this is truly protected
+            console.log(`[PasswordChecker] ${filePath}: User password required`);
+            return { isProtected: true, error: null };
+          }
         }
 
         // Some other PDF error (corrupted, invalid format, etc.)

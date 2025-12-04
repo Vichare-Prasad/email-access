@@ -310,6 +310,56 @@ async function startSetupServer(service, port) {
     }
   });
 
+  // API: Re-check password protection for all PDFs
+  // Useful after updating the PasswordChecker logic
+  app.post('/api/recheck-passwords', async (req, res) => {
+    try {
+      console.log('[API] Re-checking password protection for all PDFs...');
+
+      const statements = await service.database.getAllStatements();
+      const PasswordChecker = require('./services/PasswordChecker');
+      const pc = new PasswordChecker();
+
+      let updated = 0;
+      let errors = 0;
+
+      for (const stmt of statements) {
+        try {
+          const fsSync = require('fs');
+          // Use snake_case column names from SQLite
+          const pdfPath = stmt.pdf_path;
+          const pdfFilename = stmt.pdf_filename;
+          const isProtected = stmt.is_password_protected;
+
+          if (!pdfPath || !fsSync.existsSync(pdfPath)) {
+            console.log(`  [Skip] File not found: ${pdfFilename || 'unknown'}`);
+            continue;
+          }
+
+          const result = await pc.checkPdfProtection(pdfPath);
+          const newValue = result.isProtected ? 1 : 0;
+
+          // Update if different
+          if (isProtected !== newValue) {
+            // Use email_message_id since id can be null in some records
+            await service.database.updatePasswordProtectionByMessageId(stmt.email_message_id, newValue);
+            console.log(`  [Updated] ${pdfFilename}: ${isProtected} -> ${newValue}`);
+            updated++;
+          }
+        } catch (e) {
+          console.error(`  [Error] ${stmt.pdf_filename || 'unknown'}: ${e.message}`);
+          errors++;
+        }
+      }
+
+      console.log(`[API] Re-check complete: ${updated} updated, ${errors} errors`);
+      res.json({ success: true, total: statements.length, updated, errors });
+    } catch (e) {
+      console.error('[API] Re-check error:', e.message);
+      res.json({ success: false, error: e.message });
+    }
+  });
+
   // Start server
   const server = app.listen(port, () => {
     console.log('\n========================================');
@@ -331,7 +381,7 @@ async function startSetupServer(service, port) {
   return server;
 }
 
-async function runBackgroundService(service) {
+async function runBackgroundService(service, port) {
   console.log('\n========================================');
   console.log('BACKGROUND MODE');
   console.log('========================================');
@@ -344,6 +394,10 @@ async function runBackgroundService(service) {
     console.log('  emailService.exe --setup\n');
     process.exit(1);
   }
+
+  // Start web server for Electron integration (OAuth, API endpoints)
+  await startSetupServer(service, port);
+  console.log(`\nAPI server running on port ${port} for Electron integration`);
 
   // Start the background service
   await service.start();
@@ -409,7 +463,7 @@ async function main() {
 
     case MODE.BACKGROUND:
     default:
-      await runBackgroundService(service);
+      await runBackgroundService(service, options.port);
       break;
   }
 

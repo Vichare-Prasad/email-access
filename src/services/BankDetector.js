@@ -146,24 +146,24 @@ class BankDetector {
 
     const lowerSubject = subject.toLowerCase();
 
-    // Check for bank names in subject
+    // Check for bank names in subject (same patterns as filename detection)
     const subjectPatterns = [
-      { pattern: /hdfc\s*bank/i, bank: 'HDFC Bank' },
-      { pattern: /sbi|state\s*bank\s*of\s*india/i, bank: 'State Bank of India' },
-      { pattern: /icici\s*bank/i, bank: 'ICICI Bank' },
-      { pattern: /axis\s*bank/i, bank: 'Axis Bank' },
+      { pattern: /hdfc/i, bank: 'HDFC Bank' },
+      { pattern: /sbi|state\s*bank/i, bank: 'State Bank of India' },
+      { pattern: /icici/i, bank: 'ICICI Bank' },
+      { pattern: /axis/i, bank: 'Axis Bank' },
       { pattern: /kotak/i, bank: 'Kotak Mahindra Bank' },
       { pattern: /yes\s*bank/i, bank: 'Yes Bank' },
       { pattern: /indusind/i, bank: 'IndusInd Bank' },
       { pattern: /canara/i, bank: 'Canara Bank' },
-      { pattern: /punjab\s*national|pnb/i, bank: 'Punjab National Bank' },
-      { pattern: /bank\s*of\s*baroda|bob/i, bank: 'Bank of Baroda' },
+      { pattern: /punjab|pnb/i, bank: 'Punjab National Bank' },
+      { pattern: /baroda|bob/i, bank: 'Bank of Baroda' },
       { pattern: /union\s*bank/i, bank: 'Union Bank' },
       { pattern: /idbi/i, bank: 'IDBI Bank' },
-      { pattern: /federal\s*bank/i, bank: 'Federal Bank' },
-      { pattern: /rbl\s*bank/i, bank: 'RBL Bank' },
+      { pattern: /federal/i, bank: 'Federal Bank' },
+      { pattern: /rbl/i, bank: 'RBL Bank' },
       { pattern: /bandhan/i, bank: 'Bandhan Bank' },
-      { pattern: /sbm\s*bank/i, bank: 'SBM Bank' },
+      { pattern: /sbm/i, bank: 'SBM Bank' },
     ];
 
     for (const { pattern, bank } of subjectPatterns) {
@@ -207,6 +207,82 @@ class BankDetector {
    */
   getKnownBankDomains() {
     return Object.keys(this.senderDomains);
+  }
+
+  /**
+   * Normalize bank keyword to proper bank name
+   */
+  normalizeBankName(keyword) {
+    if (!keyword) return 'Unknown';
+
+    const lowerKeyword = keyword.toLowerCase();
+
+    // Bank name mapping
+    const bankNameMap = {
+      'hdfc': 'HDFC Bank',
+      'hdfcbank': 'HDFC Bank',
+      'sbi': 'State Bank of India',
+      'statebank': 'State Bank of India',
+      'icici': 'ICICI Bank',
+      'icicibank': 'ICICI Bank',
+      'axis': 'Axis Bank',
+      'axisbank': 'Axis Bank',
+      'kotak': 'Kotak Mahindra Bank',
+      'kotakbank': 'Kotak Mahindra Bank',
+      'kotakmahindra': 'Kotak Mahindra Bank',
+      'yes': 'Yes Bank',
+      'yesbank': 'Yes Bank',
+      'indusind': 'IndusInd Bank',
+      'indusindbank': 'IndusInd Bank',
+      'canara': 'Canara Bank',
+      'canarabank': 'Canara Bank',
+      'pnb': 'Punjab National Bank',
+      'punjab': 'Punjab National Bank',
+      'punjabnational': 'Punjab National Bank',
+      'bob': 'Bank of Baroda',
+      'baroda': 'Bank of Baroda',
+      'bankofbaroda': 'Bank of Baroda',
+      'union': 'Union Bank',
+      'unionbank': 'Union Bank',
+      'idbi': 'IDBI Bank',
+      'idbibank': 'IDBI Bank',
+      'federal': 'Federal Bank',
+      'federalbank': 'Federal Bank',
+      'rbl': 'RBL Bank',
+      'rblbank': 'RBL Bank',
+      'bandhan': 'Bandhan Bank',
+      'bandhanbank': 'Bandhan Bank',
+      'dbs': 'DBS Bank',
+      'dbsbank': 'DBS Bank',
+      'hsbc': 'HSBC',
+      'citi': 'Citibank',
+      'citibank': 'Citibank',
+      'sc': 'Standard Chartered',
+      'scb': 'Standard Chartered',
+      'standardchartered': 'Standard Chartered',
+      'deutsche': 'Deutsche Bank',
+      'uco': 'UCO Bank',
+      'ucobank': 'UCO Bank',
+      'iob': 'Indian Overseas Bank',
+      'indianoverseas': 'Indian Overseas Bank',
+      'boi': 'Bank of India',
+      'bankofindia': 'Bank of India',
+      'centralbank': 'Central Bank of India',
+      'indianbank': 'Indian Bank',
+      'paytm': 'Paytm Payments Bank',
+      'paytmbank': 'Paytm Payments Bank',
+      'airtel': 'Airtel Payments Bank',
+      'airtelbank': 'Airtel Payments Bank',
+      'fino': 'Fino Payments Bank',
+      'finobank': 'Fino Payments Bank',
+      'au': 'AU Small Finance Bank',
+      'aubank': 'AU Small Finance Bank',
+      'ausmallfinance': 'AU Small Finance Bank',
+      'equitas': 'Equitas Small Finance Bank',
+      'ujjivan': 'Ujjivan Small Finance Bank'
+    };
+
+    return bankNameMap[lowerKeyword] || 'Unknown';
   }
 }
 
