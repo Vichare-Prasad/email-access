@@ -21,7 +21,7 @@ const DEFAULT_SETTINGS = {
   customEndDate: null,   // ISO date string if preset is "custom"
 
   // Legacy setting (for backwards compatibility)
-  scanDays: 365,
+  scanDays: 30,
 
   // Connected accounts
   activeAccounts: [],

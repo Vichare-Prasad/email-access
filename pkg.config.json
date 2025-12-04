@@ -4,7 +4,10 @@
       "src/**/*.js"
     ],
     "assets": [
-      "credentials.json"
+      "credentials.json",
+      "patterns.json",
+      "src/patterns.json",
+      "run_classifier.py"
     ],
     "targets": [
       "node18-win-x64"

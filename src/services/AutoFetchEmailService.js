@@ -13,6 +13,7 @@ const GmailClient = require('./GmailClient');
 const BankDetector = require('./BankDetector');
 const PasswordChecker = require('./PasswordChecker');
 const PatternMatcher = require('./PatternMatcher');
+const Classifier = require('./Classifier');
 const AutoFetchDatabase = require('../db/AutoFetchDatabase');
 const SettingsManager = require('./SettingsManager');
 
@@ -24,6 +25,9 @@ class AutoFetchEmailService {
     this.tokensPath = opts.tokensPath || config.paths.sharedTokens;
     this.pdfOutputDir = opts.pdfOutputDir || config.paths.autoFetchedPdfs;
     this.settingsPath = opts.settingsPath || config.paths.sharedSettings;
+    this.unprocessedDir = config.paths.unprocessed || path.join(config.projectRoot, 'output', 'unprocessed');
+    this.rejectedDir = config.paths.rejected || path.join(config.projectRoot, 'output', 'rejected');
+    this.tmpClassifierDir = path.join(config.projectRoot, 'output', 'tmp_classifier');
 
     this.intervalMinutes = opts.intervalMinutes || config.intervalMinutes;
     this.intervalId = null;
@@ -36,6 +40,7 @@ class AutoFetchEmailService {
     this.bankDetector = new BankDetector();
     this.passwordChecker = new PasswordChecker();
     this.patternMatcher = new PatternMatcher();
+    this.classifier = new Classifier(config);
     this.database = new AutoFetchDatabase();
     this.settingsManager = new SettingsManager(this.settingsPath);
 
@@ -73,7 +78,7 @@ class AutoFetchEmailService {
       this.settings = {
         enabled: true,
         intervalMinutes: this.intervalMinutes,
-        scanDays: config.initialScanDays,
+        scanDays: config.initialScanDays || 30,
         activeAccounts: [],
         lastScanTime: null
       };
@@ -367,7 +372,7 @@ class AutoFetchEmailService {
       console.log(`Date range filter: ${dateFilter} (preset: ${this.settings?.dateRangePreset || 'default'})`);
     } else {
       // Fallback to legacy scanDays setting
-      const days = this.settings?.scanDays || config.initialScanDays;
+      const days = this.settings?.scanDays || config.initialScanDays || 30;
       dateFilter = `newer_than:${days}d`;
     }
 
@@ -489,6 +494,18 @@ class AutoFetchEmailService {
         console.log(`   Password: Protected`);
       }
 
+      // Content-based verification (classifier) and routing to processed folders
+      const classifierResult = await this.runClassifierAndRoute(targetPath, bankResult.name);
+      if (classifierResult?.isBank && classifierResult.bankName && classifierResult.bankName !== 'Unknown') {
+        bankResult = {
+          name: classifierResult.bankName,
+          method: 'classifier'
+        };
+        console.log(`      Classifier bank: ${bankResult.name}`);
+      } else if (classifierResult?.isBank === false) {
+        console.log('      Classifier marked as non-bank; kept record for visibility');
+      }
+
       // Get file size
       const stats = await fs.stat(targetPath);
 
@@ -520,6 +537,63 @@ class AutoFetchEmailService {
     } catch (err) {
       console.error(`   Save error: ${err.message}`);
       return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Copy file with unique name into target directory
+   */
+  async copyWithUniqueName(srcPath, destDir) {
+    await fs.mkdir(destDir, { recursive: true });
+    const base = path.basename(srcPath);
+    const ext = path.extname(base);
+    const name = path.basename(base, ext);
+    let target = path.join(destDir, base);
+    let counter = 1;
+    while (fsSync.existsSync(target)) {
+      target = path.join(destDir, `${name}_${counter}${ext}`);
+      counter += 1;
+    }
+    await fs.copyFile(srcPath, target);
+    return target;
+  }
+
+  /**
+   * Run legacy classifier on the saved PDF and route to unprocessed/rejected
+   */
+  async runClassifierAndRoute(filePath, fallbackBankName = 'Unknown') {
+    try {
+      await fs.mkdir(this.tmpClassifierDir, { recursive: true });
+      await fs.mkdir(this.unprocessedDir, { recursive: true });
+      await fs.mkdir(this.rejectedDir, { recursive: true });
+
+      const baseName = path.basename(filePath);
+      const tmpPath = path.join(this.tmpClassifierDir, baseName);
+      await fs.copyFile(filePath, tmpPath);
+
+      const result = await this.classifier.classifyFiles(this.tmpClassifierDir, this.unprocessedDir);
+      const parsed = result?.parsed || [];
+      const match = parsed.find(p =>
+        (p.file_path && path.basename(p.file_path) === baseName) ||
+        (p.path && path.basename(p.path) === baseName) ||
+        (p.filename && path.basename(p.filename) === baseName)
+      );
+
+      // Clean up temp copy
+      try { await fs.unlink(tmpPath); } catch (_) {}
+
+      const isBank = match ? (!!match.is_bank_statement || !!match.is_bank) : null;
+      const bankName = match?.bank_name || match?.bank || fallbackBankName || 'Unknown';
+
+      const destDir = isBank === false ? this.rejectedDir : this.unprocessedDir;
+      const destPath = await this.copyWithUniqueName(filePath, destDir);
+
+      console.log(`[Classifier] ${isBank === false ? 'Non-bank' : 'Bank/unknown'} -> ${destPath}`);
+
+      return { isBank: isBank === null ? null : !!isBank, bankName, destPath };
+    } catch (err) {
+      console.warn('[Classifier] Skipped content check:', err.message);
+      return { isBank: null, bankName: fallbackBankName, destPath: null, error: err.message };
     }
   }
 

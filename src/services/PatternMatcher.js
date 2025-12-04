@@ -6,9 +6,41 @@ const path = require('path');
 
 class PatternMatcher {
   constructor(patternsPath = null) {
-    this.patternsPath = patternsPath || path.join(__dirname, '../patterns.json');
+    this.patternsPath = this.resolvePatternsPath(patternsPath);
     this.patterns = null;
     this.loadPatterns();
+  }
+
+  /**
+   * Resolve patterns.json from multiple candidate locations (packaged and dev)
+   */
+  resolvePatternsPath(providedPath) {
+    const candidates = [];
+
+    // 1) Explicit path passed in
+    if (providedPath) candidates.push(providedPath);
+
+    // 2) Next to the running executable (pkg packaged)
+    if (process.execPath) {
+      candidates.push(path.join(path.dirname(process.execPath), 'patterns.json'));
+    }
+
+    // 3) Relative to bundled code (pkg snapshot / dist)
+    candidates.push(path.join(__dirname, '../patterns.json'));
+
+    // 4) Project root (dev run)
+    candidates.push(path.join(process.cwd(), 'patterns.json'));
+
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) {
+          return p;
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    // Fallback to original default
+    return providedPath || path.join(__dirname, '../patterns.json');
   }
 
   /**

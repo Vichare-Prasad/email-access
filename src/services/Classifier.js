@@ -10,8 +10,42 @@ class Classifier {
   constructor(config) {
     this.config = config;
     this.pythonCmd = config.pythonCmd;
-    this.classifierPath = config.paths.classifier;
+    this.classifierPath = this.resolveClassifierPath(config.paths.classifier);
     this.validExtensions = config.validExtensions;
+  }
+
+  /**
+   * Resolve classifier script path (packaged + dev)
+   */
+  resolveClassifierPath(providedPath) {
+    const candidates = [];
+
+    // Explicit path
+    if (providedPath) candidates.push(providedPath);
+
+    // Next to the exe (pkg)
+    if (process.execPath) {
+      const execDir = path.dirname(process.execPath);
+      candidates.push(path.join(execDir, "run_classifier.py"));
+      candidates.push(path.join(execDir, "..", "run_classifier.py"));
+    }
+
+    // Bundled relative (snapshot)
+    candidates.push(path.join(__dirname, "..", "run_classifier.py"));
+
+    // Project root (dev)
+    candidates.push(path.join(this.config.projectRoot, "run_classifier.py"));
+    candidates.push(path.join(process.cwd(), "run_classifier.py"));
+
+    for (const p of candidates) {
+      try {
+        if (fsSync.existsSync(p)) {
+          return p;
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    return providedPath;
   }
 
   /**
